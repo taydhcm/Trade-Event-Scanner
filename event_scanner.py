@@ -5,28 +5,19 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import time
 import telebot
-import google.generativeai as genai
+import json
 from concurrent.futures import ThreadPoolExecutor
 
 # ====================== CẤU HÌNH ======================
 st.set_page_config(page_title="Event Scanner Pro", layout="wide", page_icon="🔥")
 st.title("🔥 Event Scanner Pro - Phát hiện tin dự án & thầu")
 
-# Cấu hình Gemini (sửa model name)
-GEMINI_KEY = "AIzaSyBcCfM3ckkMRImYzMdHwlGTvJG3xvoLbFs"
-
-try:
-    genai.configure(api_key=GEMINI_KEY)
-    # Sử dụng model ổn định nhất hiện nay
-    model = genai.GenerativeModel('gemini-1.5-flash')   # ← ĐÃ SỬA Ở ĐÂY
-    st.success("✅ Kết nối Gemini AI thành công (gemini-1.5-flash)")
-except Exception as e:
-    st.error(f"Lỗi kết nối Gemini: {e}")
-    model = None
+# --- Grok API (xAI) ---
+GROK_API_KEY = "xai-rw15ysxQaKN2zrqfCaVKg4i3CDValCsMB7cKYbQz3ubJctxR34YxOB62bH9Qmj6UJXzv3ubnok1jepYX"   # ← Thay bằng key thật của bạn
 
 # --- Telegram ---
-TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN", "8516741675:AAE8rdixZX6x7e-ZtXXH1YjZC-PehUFkLOA")
-TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "1247850754")
+TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 bot = telebot.TeleBot(TELEGRAM_TOKEN) if TELEGRAM_TOKEN else None
 
 def send_telegram(msg):
@@ -57,21 +48,10 @@ STOCK_BY_SECTOR = {
 
 KEYWORDS = ["thầu", "trúng thầu", "giao đất", "giao mặt bằng", "Thủ Thiêm", "dự án", "hạ tầng", "đầu tư công", "BT", "BOT", "PPP", "quy hoạch"]
 
-# ====================== PHÂN TÍCH BẰNG GEMINI ======================
-def analyze_with_gemini(title, link, source):
-    if not model:
-        return {
-            "related_stocks": [],
-            "sector": "Khác",
-            "event_score": 0,
-            "summary": "Gemini không khả dụng",
-            "impact": "Thấp",
-            "recommendation": "KHÔNG ẢNH HƯỞNG"
-        }
-
+# ====================== PHÂN TÍCH BẰNG GROK (xAI) ======================
+def analyze_with_grok(title, link, source):
     prompt = f"""
-    Bạn là chuyên gia phân tích chứng khoán Việt Nam, chuyên phát hiện tin tức ảnh hưởng đến cổ phiếu.
-
+    Bạn là chuyên gia phân tích chứng khoán Việt Nam. 
     Hãy phân tích tin tức sau và trả về **chỉ JSON thuần túy**, không giải thích thêm:
 
     Tiêu đề: {title}
@@ -90,45 +70,61 @@ def analyze_with_gemini(title, link, source):
     """
 
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
+        response = requests.post(
+            "https://api.x.ai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {GROK_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "grok-beta",           # Model nhanh và mạnh của Grok
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.3,
+                "max_tokens": 800
+            },
+            timeout=20
+        )
 
-        # Xử lý trường hợp Gemini trả về có ```json
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0]
-        elif "```" in text:
-            text = text.split("```")[1]
+        if response.status_code == 200:
+            data = response.json()
+            text = data['choices'][0]['message']['content'].strip()
 
-        # Convert string thành dict
-        import json
-        result = json.loads(text)
+            # Xử lý JSON
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0]
+            elif "```" in text:
+                text = text.split("```")[1]
 
-        return result
+            result = json.loads(text)
+            return result
+        else:
+            st.warning(f"Grok API lỗi: {response.status_code}")
+            return fallback_result()
 
     except Exception as e:
-        st.warning(f"Lỗi phân tích Gemini: {e}")
-        return {
-            "related_stocks": [],
-            "sector": "Khác",
-            "event_score": 0,
-            "summary": "Không phân tích được",
-            "impact": "Thấp",
-            "recommendation": "KHÔNG ẢNH HƯỞNG"
-        }
+        st.warning(f"Lỗi gọi Grok: {e}")
+        return fallback_result()
+
+def fallback_result():
+    return {
+        "related_stocks": [],
+        "sector": "Khác",
+        "event_score": 0,
+        "summary": "Không phân tích được",
+        "impact": "Thấp",
+        "recommendation": "KHÔNG ẢNH HƯỞNG"
+    }
 
 # ====================== CRAWLER ======================
 def crawl_source(source_name, source_info):
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
-        }
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         r = requests.get(source_info["url"], timeout=15, headers=headers)
         soup = BeautifulSoup(r.text, 'html.parser')
         articles = []
 
         if source_name == "cafef":
-            # Thử nhiều selector khác nhau
-            items = soup.select(".box-category-item") or soup.select(".cate-news-item") or soup.select("article")
+            items = soup.select(".box-category-item") or soup.select("article")
             for item in items:
                 title = item.select_one("a") or item.select_one(".title a")
                 if title and title.text and any(kw in title.text.lower() for kw in KEYWORDS):
@@ -141,45 +137,15 @@ def crawl_source(source_name, source_info):
                         "source": source_info["name"],
                         "time": datetime.now().strftime("%Y-%m-%d %H:%M")
                     })
-        return articles[:10]
+        # Thêm logic cho các nguồn khác nếu cần
 
+        return articles[:12]
     except Exception as e:
-        st.error(f"Lỗi crawl {source_info['name']}: {str(e)}")
+        st.warning(f"Lỗi crawl {source_info['name']}: {str(e)}")
         return []
 
 # ====================== STREAMLIT UI ======================
 st.sidebar.header("⚙️ Cài đặt quét tin")
-
-if st.sidebar.button("🔍 Test All Sources"):
-    with st.spinner("Đang test tất cả nguồn..."):
-        total = 0
-        for src_name in SOURCES:
-            articles = crawl_source(src_name, SOURCES[src_name])
-            total += len(articles)
-            st.write(f"{SOURCES[src_name]['name']}: {len(articles)} tin")
-        st.success(f"Tổng cộng thu thập được {total} tin từ tất cả nguồn")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("🧪 Test Crawler (CafeF only)", type="secondary"):
-        with st.spinner("Đang test crawler CafeF..."):
-            test_articles = crawl_source("cafef", SOURCES["cafef"])
-            if test_articles:
-                st.success(f"✅ Thành công! Thu thập được {len(test_articles)} tin từ CafeF")
-                st.write("Một số tiêu đề mẫu:")
-                for art in test_articles[:5]:
-                    st.write(f"• {art['title']}")
-            else:
-                st.error("❌ Không thu thập được tin nào từ CafeF. Có thể trang đã thay đổi cấu trúc.")
-
-with col2:
-    if st.button("🔍 Test Gemini AI", type="secondary"):
-        test_title = "TP.HCM giao mặt bằng sạch dự án Thủ Thiêm cho CII"
-        test_link = "https://example.com"
-        result = analyze_with_gemini(test_title, test_link, "Test")
-        st.write("Kết quả phân tích Gemini:")
-        st.json(result)
 
 selected_sources = st.sidebar.multiselect(
     "Chọn nguồn tin", 
@@ -188,13 +154,8 @@ selected_sources = st.sidebar.multiselect(
     format_func=lambda x: SOURCES[x]["name"]
 )
 
-scan_interval = st.sidebar.slider("Thời gian quét tự động (phút)", 5, 30, 10)
-
-if "scan_history" not in st.session_state:
-    st.session_state.scan_history = []
-
 if st.button("🚀 Bắt đầu quét tin tức", type="primary"):
-    with st.spinner("Đang quét tin từ nhiều nguồn và phân tích bằng Gemini..."):
+    with st.spinner("Đang quét tin từ nhiều nguồn và phân tích bằng Grok..."):
         all_articles = []
         for src_name in selected_sources:
             articles = crawl_source(src_name, SOURCES[src_name])
@@ -202,7 +163,7 @@ if st.button("🚀 Bắt đầu quét tin tức", type="primary"):
 
         results = []
         for art in all_articles:
-            ai_result = analyze_with_gemini(art["title"], art["link"], art["source"])
+            ai_result = analyze_with_grok(art["title"], art["link"], art["source"])
             if ai_result["related_stocks"]:
                 for stock in ai_result["related_stocks"]:
                     results.append({
@@ -216,15 +177,6 @@ if st.button("🚀 Bắt đầu quét tin tức", type="primary"):
                         "Tóm tắt": ai_result["summary"],
                         "Khuyến nghị": ai_result["recommendation"]
                     })
-
-        # Lưu lịch sử
-        scan_record = {
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "total_articles": len(all_articles),
-            "important_events": len(results),
-            "results": results
-        }
-        st.session_state.scan_history.append(scan_record)
 
         if results:
             df = pd.DataFrame(results)
@@ -241,14 +193,4 @@ if st.button("🚀 Bắt đầu quét tin tức", type="primary"):
         else:
             st.info("✅ Không phát hiện tin quan trọng trong lần quét này.")
 
-        # Hiển thị lịch sử quét
-        st.subheader("📜 Lịch sử quét gần đây")
-        if st.session_state.scan_history:
-            history_df = pd.DataFrame([{
-                "Thời gian": r["time"],
-                "Tổng tin quét": r["total_articles"],
-                "Tin quan trọng": r["important_events"]
-            } for r in st.session_state.scan_history[-10:]])
-            st.dataframe(history_df, use_container_width=True)
-
-st.caption("Event Scanner Pro v2.2 | Tích hợp Gemini AI | Tự động quét tin dự án - thầu - giao đất")
+st.caption("Event Scanner Pro v2.3 | Tích hợp Grok AI (xAI) | Tự động quét tin dự án - thầu - giao đất")
