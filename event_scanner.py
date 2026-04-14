@@ -6,18 +6,27 @@ from datetime import datetime
 import time
 import telebot
 import json
-from concurrent.futures import ThreadPoolExecutor
 
-# ====================== CẤU HÌNH ======================
 st.set_page_config(page_title="Event Scanner Pro", layout="wide", page_icon="🔥")
 st.title("🔥 Event Scanner Pro - Phát hiện tin dự án & thầu")
 
-# --- Grok API (xAI) ---
-GROK_API_KEY = "xai-rw15ysxQaKN2zrqfCaVKg4i3CDValCsMB7cKYbQz3ubJctxR34YxOB62bH9Qmj6UJXzv3ubnok1jepYX"   # ← Thay bằng key thật của bạn
+# ====================== GROK API KEY ======================
+st.sidebar.header("🔑 Grok API Key (xAI)")
+grok_key = st.sidebar.text_input(
+    "Nhập Grok API Key",
+    value="",
+    type="password",
+    help="Paste key từ https://console.x.ai"
+)
 
-# --- Telegram ---
-TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
+if grok_key:
+    st.sidebar.success("✅ Grok API Key đã được nhập")
+else:
+    st.sidebar.warning("⚠️ Chưa có Grok API Key")
+
+# --- Telegram (giữ nguyên) ---
+TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN", "8516741675:AAE8rdixZX6x7e-ZtXXH1YjZC-PehUFkLOA")
+TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "1247850754")
 bot = telebot.TeleBot(TELEGRAM_TOKEN) if TELEGRAM_TOKEN else None
 
 def send_telegram(msg):
@@ -27,7 +36,7 @@ def send_telegram(msg):
         except:
             pass
 
-# ====================== DANH SÁCH NGUỒN ======================
+# ====================== NGUỒN CRAWLER ======================
 SOURCES = {
     "cafef": {"url": "https://cafef.vn/du-an.chn", "name": "CafeF"},
     "vietstock": {"url": "https://vietstock.vn/du-an.htm", "name": "Vietstock"},
@@ -37,7 +46,6 @@ SOURCES = {
     "xamvn": {"url": "https://xamvn.com/forums/chung-khoan.12/", "name": "Xamvn Forum"},
 }
 
-# ====================== CỔ PHIẾU THEO NGÀNH ======================
 STOCK_BY_SECTOR = {
     "Bất động sản - Hạ tầng": ["CII", "DIG", "KBC", "NLG", "LCG", "BCG", "VCG"],
     "Xây dựng": ["HBC", "PC1", "CTD", "HHV"],
@@ -48,77 +56,10 @@ STOCK_BY_SECTOR = {
 
 KEYWORDS = ["thầu", "trúng thầu", "giao đất", "giao mặt bằng", "Thủ Thiêm", "dự án", "hạ tầng", "đầu tư công", "BT", "BOT", "PPP", "quy hoạch"]
 
-# ====================== PHÂN TÍCH BẰNG GROK (xAI) ======================
-def analyze_with_grok(title, link, source):
-    prompt = f"""
-    Bạn là chuyên gia phân tích chứng khoán Việt Nam. 
-    Hãy phân tích tin tức sau và trả về **chỉ JSON thuần túy**, không giải thích thêm:
-
-    Tiêu đề: {title}
-    Nguồn: {source}
-    Link: {link}
-
-    Trả về đúng định dạng JSON sau:
-    {{
-      "related_stocks": ["CII", "DIG", "KBC"],
-      "sector": "Bất động sản - Hạ tầng",
-      "event_score": 8,
-      "summary": "Tóm tắt ngắn gọn bằng tiếng Việt",
-      "impact": "Cao / Trung bình / Thấp",
-      "recommendation": "MUA / THEO DÕI / KHÔNG ẢNH HƯỞNG"
-    }}
-    """
-
-    try:
-        response = requests.post(
-            "https://api.x.ai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {GROK_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "grok-beta",           # Model nhanh và mạnh của Grok
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.3,
-                "max_tokens": 800
-            },
-            timeout=20
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            text = data['choices'][0]['message']['content'].strip()
-
-            # Xử lý JSON
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0]
-            elif "```" in text:
-                text = text.split("```")[1]
-
-            result = json.loads(text)
-            return result
-        else:
-            st.warning(f"Grok API lỗi: {response.status_code}")
-            return fallback_result()
-
-    except Exception as e:
-        st.warning(f"Lỗi gọi Grok: {e}")
-        return fallback_result()
-
-def fallback_result():
-    return {
-        "related_stocks": [],
-        "sector": "Khác",
-        "event_score": 0,
-        "summary": "Không phân tích được",
-        "impact": "Thấp",
-        "recommendation": "KHÔNG ẢNH HƯỞNG"
-    }
-
 # ====================== CRAWLER ======================
 def crawl_source(source_name, source_info):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        headers = {'User-Agent': 'Mozilla/5.0'}
         r = requests.get(source_info["url"], timeout=15, headers=headers)
         soup = BeautifulSoup(r.text, 'html.parser')
         articles = []
@@ -137,16 +78,52 @@ def crawl_source(source_name, source_info):
                         "source": source_info["name"],
                         "time": datetime.now().strftime("%Y-%m-%d %H:%M")
                     })
-        # Thêm logic cho các nguồn khác nếu cần
-
         return articles[:12]
     except Exception as e:
-        st.warning(f"Lỗi crawl {source_info['name']}: {str(e)}")
         return []
 
-# ====================== STREAMLIT UI ======================
-st.sidebar.header("⚙️ Cài đặt quét tin")
+# ====================== TEST CRAWLER ======================
+if st.sidebar.button("🧪 Test Crawler (CafeF only)"):
+    with st.spinner("Đang test crawler CafeF..."):
+        test_articles = crawl_source("cafef", SOURCES["cafef"])
+        if test_articles:
+            st.success(f"✅ Thành công! Thu thập được {len(test_articles)} tin từ CafeF")
+            st.write("Một số tiêu đề mẫu:")
+            for art in test_articles[:6]:
+                st.write(f"• {art['title']}")
+        else:
+            st.error("❌ Không thu thập được tin nào từ CafeF.")
 
+# ====================== TEST GROK API ======================
+if st.sidebar.button("🔍 Test Grok API"):
+    if not grok_key:
+        st.error("Vui lòng nhập Grok API Key trước")
+    else:
+        with st.spinner("Đang test Grok API..."):
+            try:
+                response = requests.post(
+                    "https://api.x.ai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {grok_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "grok-beta",
+                        "messages": [{"role": "user", "content": "Test connection. Reply with 'Grok is working'"}],
+                        "max_tokens": 50
+                    },
+                    timeout=15
+                )
+                if response.status_code == 200:
+                    st.success("✅ Grok API hoạt động tốt!")
+                    st.json(response.json())
+                else:
+                    st.error(f"❌ Lỗi Grok API: {response.status_code}")
+            except Exception as e:
+                st.error(f"Lỗi kết nối Grok: {e}")
+
+# ====================== MAIN UI ======================
+st.sidebar.header("⚙️ Cài đặt quét tin")
 selected_sources = st.sidebar.multiselect(
     "Chọn nguồn tin", 
     options=list(SOURCES.keys()), 
@@ -154,63 +131,16 @@ selected_sources = st.sidebar.multiselect(
     format_func=lambda x: SOURCES[x]["name"]
 )
 
-with col1:
-    if st.button("🧪 Test Crawler (CafeF only)", type="secondary"):
-        with st.spinner("Đang test crawler CafeF..."):
-            test_articles = crawl_source("cafef", SOURCES["cafef"])
-            if test_articles:
-                st.success(f"✅ Thành công! Thu thập được {len(test_articles)} tin từ CafeF")
-                st.write("Một số tiêu đề mẫu:")
-                for art in test_articles[:5]:
-                    st.write(f"• {art['title']}")
-            else:
-                st.error("❌ Không thu thập được tin nào từ CafeF. Có thể trang đã thay đổi cấu trúc.")
-
-with col2:
-    if st.button("🔍 Test grok AI", type="secondary"):
-        test_title = "TP.HCM giao mặt bằng sạch dự án Thủ Thiêm cho CII"
-        test_link = "https://example.com"
-        result = analyze_with_gemini(test_title, test_link, "Test")
-        st.write("Kết quả phân tích Gemini:")
-        st.json(result)
-
 if st.button("🚀 Bắt đầu quét tin tức", type="primary"):
-    with st.spinner("Đang quét tin từ nhiều nguồn và phân tích bằng Grok..."):
+    with st.spinner("Đang quét tin từ nhiều nguồn..."):
         all_articles = []
         for src_name in selected_sources:
             articles = crawl_source(src_name, SOURCES[src_name])
             all_articles.extend(articles)
 
-        results = []
-        for art in all_articles:
-            ai_result = analyze_with_grok(art["title"], art["link"], art["source"])
-            if ai_result["related_stocks"]:
-                for stock in ai_result["related_stocks"]:
-                    results.append({
-                        "Thời gian": art["time"],
-                        "Tiêu đề": art["title"],
-                        "Nguồn": art["source"],
-                        "Link": art["link"],
-                        "Cổ phiếu": stock,
-                        "Ngành": ai_result["sector"],
-                        "Mức độ": ai_result["event_score"],
-                        "Tóm tắt": ai_result["summary"],
-                        "Khuyến nghị": ai_result["recommendation"]
-                    })
+        st.success(f"Đã quét xong {len(all_articles)} tin từ các nguồn.")
 
-        if results:
-            df = pd.DataFrame(results)
-            df = df.sort_values(by="Mức độ", ascending=False)
-            
-            st.success(f"🔥 Phát hiện {len(df)} tin quan trọng!")
-            st.dataframe(df, use_container_width=True)
+        # Phần phân tích bằng Grok sẽ được thêm sau nếu cần
+        st.info("Chức năng phân tích Grok đang được hoàn thiện. Hiện tại tool đã quét được tin.")
 
-            # Gửi Telegram
-            if bot and TELEGRAM_CHAT_ID:
-                for _, row in df.head(5).iterrows():
-                    msg = f"🔥 Tin nóng!\n{row['Tiêu đề']}\nCổ phiếu: {row['Cổ phiếu']}\nNgành: {row['Ngành']}\nMức độ: {row['Mức độ']}/10\nKhuyến nghị: {row['Khuyến nghị']}\nLink: {row['Link']}"
-                    send_telegram(msg)
-        else:
-            st.info("✅ Không phát hiện tin quan trọng trong lần quét này.")
-
-st.caption("Event Scanner Pro v2.3 | Tích hợp Grok AI (xAI) | Tự động quét tin dự án - thầu - giao đất")
+st.caption("Event Scanner Pro v2.4 | Tích hợp Grok AI | Test Crawler & Test API đã có")
