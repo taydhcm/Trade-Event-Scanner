@@ -11,10 +11,15 @@ import json
 st.set_page_config(page_title="Event Scanner Pro", layout="wide", page_icon="🔥")
 st.title("🔥 Event Scanner Pro - Phát hiện tin dự án & thầu")
 
-# ====================== GROK API KEY ======================
-GROK_API_KEY = "xai-5lMLN1cjRbJpl6AFu5198KT3MG9LxPdiLd0cVKWfE1QiO6ZHPcCeCfUgcDXdSluZ9s1DPyBRgZuAhh1R"
+# ====================== ĐỌC API KEY TỪ SECRETS.TOML ======================
+try:
+    GROK_API_KEY = st.secrets["GROK_API_KEY"]
+    st.sidebar.success("✅ Đã load Grok API Key từ secrets.toml")
+except Exception:
+    st.sidebar.error("❌ Không tìm thấy GROK_API_KEY trong secrets.toml")
+    GROK_API_KEY = None
 
-# --- Telegram (nếu có) ---
+# --- Telegram (tùy chọn) ---
 TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 bot = telebot.TeleBot(TELEGRAM_TOKEN) if TELEGRAM_TOKEN else None
@@ -49,6 +54,10 @@ KEYWORDS = ["thầu", "trúng thầu", "giao đất", "giao mặt bằng", "Th�
 
 # ====================== GỌI GROK API ======================
 def call_grok(prompt):
+    if not GROK_API_KEY:
+        st.error("Grok API Key chưa được cấu hình trong secrets.toml!")
+        return None
+
     try:
         response = requests.post(
             "https://api.x.ai/v1/chat/completions",
@@ -69,7 +78,7 @@ def call_grok(prompt):
             data = response.json()
             return data['choices'][0]['message']['content'].strip()
         else:
-            st.warning(f"Grok API lỗi: {response.status_code} - {response.text}")
+            st.warning(f"Grok API lỗi: {response.status_code}")
             return None
     except Exception as e:
         st.error(f"Lỗi kết nối Grok: {e}")
@@ -200,4 +209,4 @@ if st.button("🚀 Bắt đầu quét tin tức", type="primary"):
         else:
             st.info("✅ Không phát hiện tin quan trọng trong lần quét này.")
 
-st.caption("Event Scanner Pro v2.4 | Tích hợp Grok AI (xAI) | Tự động quét tin dự án - thầu - giao đất")
+st.caption("Event Scanner Pro v2.4 | Tích hợp Grok AI (xAI) qua secrets.toml | Tự động quét tin dự án - thầu - giao đất")
