@@ -150,6 +150,15 @@ def crawl_source(source_name, source_info):
 # ====================== STREAMLIT UI ======================
 st.sidebar.header("⚙️ Cài đặt quét tin")
 
+if st.sidebar.button("🔍 Test All Sources"):
+    with st.spinner("Đang test tất cả nguồn..."):
+        total = 0
+        for src_name in SOURCES:
+            articles = crawl_source(src_name, SOURCES[src_name])
+            total += len(articles)
+            st.write(f"{SOURCES[src_name]['name']}: {len(articles)} tin")
+        st.success(f"Tổng cộng thu thập được {total} tin từ tất cả nguồn")
+
 col1, col2 = st.columns(2)
 
 with col1:
