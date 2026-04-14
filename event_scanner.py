@@ -97,40 +97,58 @@ def analyze_with_gemini(title, link, source):
 # ====================== CRAWLER ======================
 def crawl_source(source_name, source_info):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
+        }
         r = requests.get(source_info["url"], timeout=15, headers=headers)
         soup = BeautifulSoup(r.text, 'html.parser')
         articles = []
 
         if source_name == "cafef":
-            for item in soup.select(".box-category-item"):
-                title = item.select_one(".box-category-title a")
-                if title and any(kw in title.text.lower() for kw in KEYWORDS):
+            # Thử nhiều selector khác nhau
+            items = soup.select(".box-category-item") or soup.select(".cate-news-item") or soup.select("article")
+            for item in items:
+                title = item.select_one("a") or item.select_one(".title a")
+                if title and title.text and any(kw in title.text.lower() for kw in KEYWORDS):
+                    link = title.get('href', '')
+                    if not link.startswith('http'):
+                        link = "https://cafef.vn" + link
                     articles.append({
                         "title": title.text.strip(),
-                        "link": "https://cafef.vn" + title['href'],
+                        "link": link,
                         "source": source_info["name"],
                         "time": datetime.now().strftime("%Y-%m-%d %H:%M")
                     })
+        return articles[:10]
 
-        elif source_name == "xamvn":
-            for item in soup.select("a.thread-title"):
-                title = item.text.strip()
-                if any(kw in title.lower() for kw in KEYWORDS):
-                    articles.append({
-                        "title": title,
-                        "link": "https://xamvn.com" + item['href'],
-                        "source": "Xamvn Forum",
-                        "time": datetime.now().strftime("%Y-%m-%d %H:%M")
-                    })
-
-        return articles[:12]
     except Exception as e:
-        st.warning(f"Lỗi crawl {source_info['name']}: {e}")
+        st.error(f"Lỗi crawl {source_info['name']}: {str(e)}")
         return []
 
 # ====================== STREAMLIT UI ======================
 st.sidebar.header("⚙️ Cài đặt quét tin")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("🧪 Test Crawler (CafeF only)", type="secondary"):
+        with st.spinner("Đang test crawler CafeF..."):
+            test_articles = crawl_source("cafef", SOURCES["cafef"])
+            if test_articles:
+                st.success(f"✅ Thành công! Thu thập được {len(test_articles)} tin từ CafeF")
+                st.write("Một số tiêu đề mẫu:")
+                for art in test_articles[:5]:
+                    st.write(f"• {art['title']}")
+            else:
+                st.error("❌ Không thu thập được tin nào từ CafeF. Có thể trang đã thay đổi cấu trúc.")
+
+with col2:
+    if st.button("🔍 Test Gemini AI", type="secondary"):
+        test_title = "TP.HCM giao mặt bằng sạch dự án Thủ Thiêm cho CII"
+        test_link = "https://example.com"
+        result = analyze_with_gemini(test_title, test_link, "Test")
+        st.write("Kết quả phân tích Gemini:")
+        st.json(result)
 
 selected_sources = st.sidebar.multiselect(
     "Chọn nguồn tin", 
