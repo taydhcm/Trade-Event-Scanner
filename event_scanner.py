@@ -13,13 +13,13 @@ st.set_page_config(page_title="Event Scanner Pro", layout="wide", page_icon="�
 st.title("🔥 Event Scanner Pro - Phát hiện tin dự án & thầu")
 
 # Cấu hình Gemini (sửa model name)
-GEMINI_KEY = "AIzaSyCwUSo80dlrFJ6ew4NaKaAn4cKeKgpe-9g"
+GEMINI_KEY = "AIzaSyBcCfM3ckkMRImYzMdHwlGTvJG3xvoLbFs"
 
 try:
     genai.configure(api_key=GEMINI_KEY)
     # Sử dụng model ổn định nhất hiện nay
-    model = genai.GenerativeModel('gemini-1.5-flash')   # ← ĐÃ SỬA Ở ĐÂY
-    st.success("✅ Kết nối Gemini AI thành công (gemini-1.5-flash)")
+    model = genai.GenerativeModel('gemini-2.0-flash-thinking-exp')   # ← ĐÃ SỬA Ở ĐÂY
+    st.success("✅ Kết nối Gemini AI thành công (gemini-2.0-flash-thinking-exp)")
 except Exception as e:
     st.error(f"Lỗi kết nối Gemini: {e}")
     model = None
