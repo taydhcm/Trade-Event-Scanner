@@ -154,6 +154,26 @@ selected_sources = st.sidebar.multiselect(
     format_func=lambda x: SOURCES[x]["name"]
 )
 
+with col1:
+    if st.button("🧪 Test Crawler (CafeF only)", type="secondary"):
+        with st.spinner("Đang test crawler CafeF..."):
+            test_articles = crawl_source("cafef", SOURCES["cafef"])
+            if test_articles:
+                st.success(f"✅ Thành công! Thu thập được {len(test_articles)} tin từ CafeF")
+                st.write("Một số tiêu đề mẫu:")
+                for art in test_articles[:5]:
+                    st.write(f"• {art['title']}")
+            else:
+                st.error("❌ Không thu thập được tin nào từ CafeF. Có thể trang đã thay đổi cấu trúc.")
+
+with col2:
+    if st.button("🔍 Test grok AI", type="secondary"):
+        test_title = "TP.HCM giao mặt bằng sạch dự án Thủ Thiêm cho CII"
+        test_link = "https://example.com"
+        result = analyze_with_gemini(test_title, test_link, "Test")
+        st.write("Kết quả phân tích Gemini:")
+        st.json(result)
+
 if st.button("🚀 Bắt đầu quét tin tức", type="primary"):
     with st.spinner("Đang quét tin từ nhiều nguồn và phân tích bằng Grok..."):
         all_articles = []
