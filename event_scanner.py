@@ -18,8 +18,8 @@ GEMINI_KEY = "AIzaSyBcCfM3ckkMRImYzMdHwlGTvJG3xvoLbFs"
 try:
     genai.configure(api_key=GEMINI_KEY)
     # Sử dụng model ổn định nhất hiện nay
-    model = genai.GenerativeModel('gemini-2.0-flash-thinking-exp')   # ← ĐÃ SỬA Ở ĐÂY
-    st.success("✅ Kết nối Gemini AI thành công (gemini-2.0-flash-thinking-exp)")
+    model = genai.GenerativeModel('gemini-1.5-flash')   # ← ĐÃ SỬA Ở ĐÂY
+    st.success("✅ Kết nối Gemini AI thành công (gemini-1.5-flash)")
 except Exception as e:
     st.error(f"Lỗi kết nối Gemini: {e}")
     model = None
